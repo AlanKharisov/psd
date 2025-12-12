@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Admin</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="page">
+<div class="container">
+    <h1>Admin</h1>
+
+    <p>
+        <a class="btn ghost" href="/">← Главная</a>
+        <button class="btn" id="btnLogout">Logout</button>
+    </p>
+
+    <div class="card">
+        <h3>Добавить товар</h3>
+
+        <form method="POST" action="/admin/product" class="needs-token">
+            <input type="hidden" name="id_token" value="">
+
+            <input name="name" placeholder="Название" required>
+            <input name="sku" placeholder="SKU" required>
+            <input name="brand" placeholder="Бренд">
+            <input name="category" placeholder="Категория">
+            <input name="photo" placeholder="Фото URL">
+            <input name="price" placeholder="Цена" />
+            <input name="stars" placeholder="Stars (0-5)" />
+
+            <label><input type="checkbox" name="presence"> В наличии</label>
+            <label><input type="checkbox" name="is_new"> New</label>
+            <label><input type="checkbox" name="is_collection"> Collection</label>
+
+            <textarea name="description" placeholder="Описание"></textarea>
+
+            <button class="btn">Создать</button>
+        </form>
+    </div>
+</div>
+
+<script src="/static/firebase-config.js"></script>
+<script src="/static/auth.js"></script>
+</body>
+</html>

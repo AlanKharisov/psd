@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>{{.Product.Name}} — Магазин</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f5f5f5; }
+        header { background:#222; color:#fff; padding:10px 20px; display:flex; justify-content:space-between; align-items:center; }
+        header a { color:#fff; text-decoration:none; font-size:14px; margin-left:15px; }
+        h1 { margin:0; font-size:22px; }
+        .header-right { display:flex; align-items:center; }
+        .container { max-width:1000px; margin:20px auto; padding:0 15px; }
+        .product-layout { display:flex; flex-wrap:wrap; gap:20px; }
+        .product-image { flex:1; min-width:280px; }
+        .product-image img { width:100%; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.15); }
+        .product-info { flex:1.2; min-width:280px; background:#fff; padding:15px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); }
+        .product-title { margin:0 0 8px; font-size:24px; }
+        .badges { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; font-size:11px; }
+        .badge { padding:2px 6px; border-radius:10px; background:#eee; }
+        .badge-new { background:#0a7c3b; color:#fff; }
+        .badge-out { background:#cc0000; color:#fff; }
+        .price { font-weight:bold; font-size:22px; margin:10px 0; }
+        .stars { color:#ffb400; font-size:16px; margin:5px 0 10px; }
+        .meta { font-size:13px; color:#555; margin-bottom:10px; line-height:1.5; }
+        .desc { font-size:14px; color:#333; margin-bottom:15px; }
+        .actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+        .btn-primary { padding:8px 14px; border:none; border-radius:4px; background:#0a7c3b; color:#fff; font-size:14px; cursor:pointer; }
+        .btn-primary:hover { opacity:0.9; }
+        .btn-secondary { padding:7px 12px; border-radius:4px; border:1px solid #0a7c3b; background:#fff; color:#0a7c3b; font-size:13px; text-decoration:none; display:inline-block; }
+        .btn-secondary:hover { background:#f0fff6; }
+        .small-label { font-size:12px; color:#777; margin-top:3px; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Деталі товару</h1>
+    <div class="header-right">
+        <a href="/">← Каталог</a>
+        <a href="/cart">🛒 Корзина ({{.CartCount}})</a>
+    </div>
+</header>
+<div class="container">
+    <div class="product-layout">
+        <div class="product-image">
+            <img src="{{.Product.Photo}}" alt="{{.Product.Name}}">
+        </div>
+        <div class="product-info">
+            <div class="badges">
+                {{if .Product.IsNew}}<span class="badge badge-new">NEW</span>{{end}}
+                {{if not .Product.Presence}}<span class="badge badge-out">Немає в наявності</span>{{end}}
+                <span class="badge">ID: {{.Product.ID}}</span>
+                <span class="badge">{{.Product.Category}}</span>
+                <span class="badge">{{.Product.Brand}}</span>
+                <span class="badge">{{.Product.Color}}</span>
+            </div>
+
+            <h2 class="product-title">{{.Product.Name}}</h2>
+            <div class="price">{{printf "%.2f" .Product.Price}} €</div>
+
+            <div class="stars">
+                {{if ge .Product.Stars 1}}★{{end}}
+                {{if ge .Product.Stars 2}}★{{end}}
+                {{if ge .Product.Stars 3}}★{{end}}
+                {{if ge .Product.Stars 4}}★{{end}}
+                {{if ge .Product.Stars 5}}★{{end}}
+                <span style="color:#999; font-size:12px;">({{.Product.Stars}}/5)</span>
+            </div>
+
+            <div class="meta">
+                <strong>Бренд:</strong> {{.Product.Brand}}<br>
+                <strong>Колір:</strong> {{.Product.Color}}<br>
+                <strong>Розмір:</strong> {{.Product.Size}}<br>
+                <strong>Вага:</strong> {{.Product.Weight}}<br>
+                <strong>SKU:</strong> {{.Product.SKU}}<br>
+                {{if .Product.Party}}<strong>Партія:</strong> {{.Product.Party}}{{end}}
+            </div>
+
+            <p class="desc">{{.Product.Description}}</p>
+
+            <div class="actions">
+                <form action="/cart/add" method="POST" style="margin:0;">
+                    <input type="hidden" name="id" value="{{.Product.ID}}">
+                    <input type="hidden" name="redirect_to" value="/product?id={{.Product.ID}}">
+                    <button type="submit" class="btn-primary">Додати в корзину</button>
+                </form>
+                <a href="/cart" class="btn-secondary">Перейти в корзину</a>
+            </div>
+            <div class="small-label">
+                Оплата та доставка — демо. Ніяких реальних покупок не здійснюється 🙂
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
