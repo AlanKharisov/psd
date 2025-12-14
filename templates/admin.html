@@ -1,46 +1,304 @@
 <!doctype html>
-<html lang="ru">
+<html lang="uk">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Admin</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <title>Адмінка — PSDinfo</title>
+    <link rel="stylesheet" href="/static/css/style.css" />
 </head>
+
 <body class="page">
-<div class="container">
-    <h1>Admin</h1>
+<header class="admin-top">
+    <div class="admin-top-inner">
+        <div class="admin-title">
+            <div class="brand-logo">PSD</div>
+            <div>
+                <div class="h1">Адмінка</div>
+                <div class="muted">Додавання та керування товарами</div>
+            </div>
+        </div>
 
-    <p>
-        <a class="btn ghost" href="/">← Главная</a>
-        <button class="btn" id="btnLogout">Logout</button>
-    </p>
-
-    <div class="card">
-        <h3>Добавить товар</h3>
-
-        <form method="POST" action="/admin/product" class="needs-token">
-            <input type="hidden" name="id_token" value="">
-
-            <input name="name" placeholder="Название" required>
-            <input name="sku" placeholder="SKU" required>
-            <input name="brand" placeholder="Бренд">
-            <input name="category" placeholder="Категория">
-            <input name="photo" placeholder="Фото URL">
-            <input name="price" placeholder="Цена" />
-            <input name="stars" placeholder="Stars (0-5)" />
-
-            <label><input type="checkbox" name="presence"> В наличии</label>
-            <label><input type="checkbox" name="is_new"> New</label>
-            <label><input type="checkbox" name="is_collection"> Collection</label>
-
-            <textarea name="description" placeholder="Описание"></textarea>
-
-            <button class="btn">Создать</button>
-        </form>
+        <div class="admin-actions">
+            <a class="btn ghost" href="/">← На сайт</a>
+            <a class="btn" href="/logout">Вийти</a>
+        </div>
     </div>
-</div>
+</header>
 
-<script src="/static/firebase-config.js"></script>
-<script src="/static/auth.js"></script>
+<main class="container">
+    <section class="admin-grid">
+        <!-- FORM -->
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Додати товар</h2>
+                <div class="muted">Поля зі * — обовʼязкові</div>
+            </div>
+
+            <form class="admin-form" method="POST" action="/admin/product">
+                <div class="row-2">
+                    <label class="field">
+                        <span>Назва *</span>
+                        <input name="name" placeholder="Напр.: Milfoam Forrest Synthetic" required>
+                    </label>
+                    <label class="field">
+                        <span>SKU (артикул) *</span>
+                        <input name="sku" placeholder="Напр.: MIL-001" required>
+                    </label>
+                </div>
+
+                <div class="row-3">
+                    <label class="field">
+                        <span>Бренд</span>
+                        <input name="brand" placeholder="Milfoam / PSDinfo">
+                    </label>
+                    <label class="field">
+                        <span>Категорія</span>
+                        <input name="category" placeholder="Спорядження / Колекції / Аксесуари">
+                    </label>
+                    <label class="field">
+                        <span>Фото (URL)</span>
+                        <input id="photo" name="photo" placeholder="https://... або 600x400?text=..." />
+                    </label>
+                </div>
+
+                <div class="row-4">
+                    <label class="field">
+                        <span>Колір</span>
+                        <input id="color" name="color" placeholder="Чорний / Білий / Олива">
+                    </label>
+                    <label class="field">
+                        <span>Розмір</span>
+                        <input name="size" placeholder="S / M / L / One size">
+                    </label>
+                    <label class="field">
+                        <span>Вага</span>
+                        <input id="weight" name="weight" placeholder="50g / 0.5kg / —">
+                    </label>
+                    <label class="field">
+                        <span>Кількість (qty)</span>
+                        <input id="qty" name="qty" placeholder="Напр.: 10">
+                    </label>
+                </div>
+
+                <div class="row-2">
+                    <label class="field">
+                        <span>Ціна ₴</span>
+                        <input name="price" placeholder="Напр.: 425">
+                    </label>
+                    <label class="field">
+                        <span>Ціна для ветеранів ₴ (DoublePrice)</span>
+                        <input name="double_price" placeholder="Напр.: 399">
+                    </label>
+                </div>
+
+                <div class="row-2">
+                    <label class="field">
+                        <span>Стара ціна ₴ (закреслити)</span>
+                        <input name="old_price" placeholder="Напр.: 499">
+                    </label>
+                    <label class="field">
+                        <span>Ціна зі знижкою ₴ (червона)</span>
+                        <input name="sale_price" placeholder="Напр.: 425">
+                    </label>
+                </div>
+
+                <div class="row-2">
+                    <label class="check">
+                        <input id="limited" type="checkbox" name="limited">
+                        <span>Limited (обмежений товар)</span>
+                    </label>
+
+                    <div class="hint-box" id="limitedHint">
+                        Увімкни Limited, щоб працювали qty / “продано” / приховування.
+                    </div>
+                </div>
+
+                <div class="row-2">
+                    <label class="field">
+                        <span>Показувати “продано (0)” до дати (SoldOutUntil)</span>
+                        <input id="soldOutUntil" name="sold_out_until" placeholder="YYYY-MM-DD" disabled>
+                    </label>
+
+                    <label class="field">
+                        <span>Сховати товар після дати (HideAt)</span>
+                        <input id="hideAt" name="hide_at" placeholder="YYYY-MM-DD" disabled>
+                    </label>
+                </div>
+
+                <label class="field">
+                    <span>Опис</span>
+                    <textarea name="description" placeholder="Коротко: що це, для чого, особливості..."></textarea>
+                </label>
+
+                <!-- LIVE PREVIEW -->
+                <div class="preview">
+                    <div class="preview-head">
+                        <div class="muted">Превʼю картки</div>
+                    </div>
+
+                    <div class="preview-card">
+                        <div class="preview-img">
+                            <img id="previewImg" src="https://via.placeholder.com/600x400?text=Preview" alt="preview">
+                        </div>
+
+                        <div class="preview-body">
+                            <div class="preview-brand" id="previewBrand">Бренд</div>
+                            <div class="preview-title" id="previewTitle">Назва товару</div>
+                            <div class="preview-price">
+                                <span class="p-old" id="previewOld" style="display:none">₴0.00</span>
+                                <span class="p-sale" id="previewSale" style="display:none">₴0.00</span>
+                                <span class="p-main" id="previewMain">від ₴0.00</span>
+                            </div>
+                            <div class="preview-meta">
+                                <span class="stock ok" id="previewStock">● В наявності</span>
+                                <span class="muted" id="previewColor"></span>
+                                <span class="muted" id="previewWeight"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-wide" type="submit">Створити товар</button>
+            </form>
+        </div>
+
+        <!-- LIST -->
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Поточні товари</h2>
+                <div class="muted">Список з сервера (демо памʼять)</div>
+            </div>
+
+            <div class="admin-list">
+                {{range .}}
+                <a class="admin-item" href="/product?id={{.ID}}">
+                    <img src="{{.Photo}}" alt="{{.Name}}">
+                    <div class="admin-item-body">
+                        <div class="admin-item-title">{{.Name}}</div>
+                        <div class="admin-item-sub">
+                            SKU: <b>{{.SKU}}</b> · {{.Brand}} · {{.Category}}
+                        </div>
+                        <div class="admin-item-sub muted">
+                            {{if .Limited}}Qty: <b>{{.Qty}}</b> · Limited{{else}}Без ліміту{{end}}
+                        </div>
+                    </div>
+                </a>
+                {{end}}
+            </div>
+        </div>
+    </section>
+</main>
+
+<script>
+    // ====== SMALL UI LOGIC (динаміка адмінки) ======
+    const $ = (id) => document.getElementById(id);
+
+    const limited = $("limited");
+    const soldOutUntil = $("soldOutUntil");
+    const hideAt = $("hideAt");
+    const qty = $("qty");
+
+    const photo = $("photo");
+    const color = $("color");
+    const weight = $("weight");
+
+    // preview
+    const previewImg = $("previewImg");
+    const previewTitle = $("previewTitle");
+    const previewBrand = $("previewBrand");
+    const previewMain = $("previewMain");
+    const previewOld = $("previewOld");
+    const previewSale = $("previewSale");
+    const previewStock = $("previewStock");
+    const previewColor = $("previewColor");
+    const previewWeight = $("previewWeight");
+
+    function toMoney(v) {
+        const n = Number(v);
+        if (!isFinite(n)) return null;
+        return "₴" + n.toFixed(2);
+    }
+
+    function normalizePhotoUrl(v) {
+        v = (v || "").trim();
+        if (!v) return "https://via.placeholder.com/600x400?text=Preview";
+        if (v.startsWith("http://") || v.startsWith("https://")) return v;
+        if (v.startsWith("600x") || v.startsWith("300x")) return "https://via.placeholder.com/" + v;
+        return v;
+    }
+
+    function refreshLimitedUI() {
+        const on = !!limited.checked;
+        soldOutUntil.disabled = !on;
+        hideAt.disabled = !on;
+        qty.disabled = !on;
+
+        if (!on) {
+            previewStock.textContent = "● В наявності";
+            previewStock.className = "stock ok";
+            return;
+        }
+
+        const q = parseInt((qty.value || "0"), 10);
+        if (q > 0) {
+            previewStock.textContent = "● В наявності";
+            previewStock.className = "stock ok";
+        } else {
+            previewStock.textContent = "● Немає (0)";
+            previewStock.className = "stock no";
+        }
+    }
+
+    // live preview bindings
+    document.querySelector("input[name='name']").addEventListener("input", e => {
+        previewTitle.textContent = e.target.value || "Назва товару";
+    });
+
+    document.querySelector("input[name='brand']").addEventListener("input", e => {
+        previewBrand.textContent = e.target.value || "Бренд";
+    });
+
+    document.querySelector("input[name='price']").addEventListener("input", e => {
+        const m = toMoney(e.target.value);
+        previewMain.textContent = m ? ("від " + m) : "від ₴0.00";
+    });
+
+    document.querySelector("input[name='old_price']").addEventListener("input", e => {
+        const m = toMoney(e.target.value);
+        if (m && Number(e.target.value) > 0) {
+            previewOld.style.display = "inline";
+            previewOld.textContent = m;
+        } else {
+            previewOld.style.display = "none";
+        }
+    });
+
+    document.querySelector("input[name='sale_price']").addEventListener("input", e => {
+        const m = toMoney(e.target.value);
+        if (m && Number(e.target.value) > 0) {
+            previewSale.style.display = "inline";
+            previewSale.textContent = m;
+        } else {
+            previewSale.style.display = "none";
+        }
+    });
+
+    photo.addEventListener("input", e => {
+        previewImg.src = normalizePhotoUrl(e.target.value);
+    });
+
+    color.addEventListener("input", e => {
+        previewColor.textContent = e.target.value ? ("Колір: " + e.target.value) : "";
+    });
+
+    weight.addEventListener("input", e => {
+        previewWeight.textContent = e.target.value ? ("Вага: " + e.target.value) : "";
+    });
+
+    qty.addEventListener("input", refreshLimitedUI);
+    limited.addEventListener("change", refreshLimitedUI);
+
+    refreshLimitedUI();
+</script>
 </body>
 </html>

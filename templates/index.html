@@ -1,243 +1,229 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="uk">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Shop</title>
-
-    <style>
-        body {
-            margin: 0;
-            font-family: system-ui, Arial;
-            background: #f6f6f6;
-        }
-
-        header {
-            background: #fff;
-            border-bottom: 1px solid #ddd;
-            padding: 12px 16px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        header h1 {
-            margin: 0;
-            font-size: 20px;
-        }
-
-        .search {
-            flex: 1;
-        }
-
-        .search input {
-            width: 100%;
-            padding: 10px 12px;
-            border-radius: 8px;
-            border: 1px solid #ccc;
-        }
-
-        .auth {
-            display: flex;
-            gap: 8px;
-        }
-
-        button {
-            padding: 8px 14px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            background: #111;
-            color: #fff;
-        }
-
-        button.ghost {
-            background: #eee;
-            color: #111;
-        }
-
-        main {
-            padding: 16px;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: 14px;
-        }
-
-        .card {
-            background: #fff;
-            border-radius: 12px;
-            padding: 10px;
-            border: 1px solid #ddd;
-        }
-
-        .card img {
-            width: 100%;
-            height: 140px;
-            object-fit: contain;
-            background: #fafafa;
-            border-radius: 8px;
-        }
-
-        .title {
-            font-weight: 700;
-            margin-top: 6px;
-            font-size: 14px;
-        }
-
-        .brand {
-            font-size: 12px;
-            color: #777;
-        }
-
-        .price {
-            margin-top: 6px;
-            font-weight: 800;
-        }
-
-        .add {
-            margin-top: 8px;
-            width: 100%;
-        }
-
-        .user {
-            font-size: 13px;
-            color: #333;
-            margin-right: 6px;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>PSDinfo</title>
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 
 <body>
 
-<header>
-    <h1>Shop</h1>
+<!-- TOP HEADER -->
+<header class="site-header">
+    <div class="header-row">
+        <a class="brand" href="/">
+            <div class="brand-logo">PSD</div>
+        </a>
 
-    <!-- ОДИН ПОИСК -->
-    <form class="search" method="GET" action="/">
-        <input
-                name="q"
-                placeholder="Поиск: SKU / Название / Бренд"
-                value="{{.Query}}"
-        />
-    </form>
+        <form class="search" method="GET" action="/">
+            <input name="q" value="{{.Query}}" placeholder="Пошук товарів..." />
+            <button type="submit" aria-label="Пошук">🔎</button>
+        </form>
 
-    <!-- AUTH -->
-    <div class="auth">
-        <span id="userEmail" class="user"></span>
-        <button id="btnLogin">Google Login</button>
-        <button id="btnLogout" class="ghost" style="display:none">Logout</button>
+        <nav class="header-actions">
+            {{if .IsLoggedIn}}
+            <a class="icon-link" href="/logout">Вийти</a>
+            <a class="icon-link" href="/admin">Адмінка</a>
+            {{else}}
+            <a class="icon-link" href="/login">Авторизуватися</a>
+            {{end}}
+
+            <a class="cart-pill" href="/cart">
+                <span class="cart-ico">🛒</span>
+                <span class="cart-text">Кошик</span>
+                <span class="cart-sum">({{printf "%.2f" .CartTotal}})</span>
+            </a>
+        </nav>
+    </div>
+
+    <!-- NAV CATEGORIES (твоя логіка: колекції = категорії/колекції) -->
+    <div class="nav-row">
+        <a class="nav-link" href="/">Головна</a>
+        <a class="nav-link" href="/?q=Work%20%26%20Travel">Work &amp; Travel</a>
+        <a class="nav-link" href="/?q=Спорядження">Спорядження</a>
+        <a class="nav-link" href="/?q=Збройові%20аксесуари">Збройові аксесуари</a>
+        <a class="nav-link" href="/?q=Новинки">Новинки</a>
     </div>
 </header>
 
-<main>
+<!-- HERO -->
+<section class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-card">
+        <div class="hero-title">PSDinfo</div>
+        <div class="hero-subtitle">Унікальний ветеранський мерч та якісне військове спорядження</div>
+    </div>
+</section>
 
+<main class="container">
+
+    <!-- COLLECTIONS -->
     {{if .Collections}}
-    <h2>Collections</h2>
-    <div class="grid">
-        {{range .Collections}}
-        <div class="card">
-            <img src="{{.Photo}}">
-            <div class="brand">{{.Brand}}</div>
-            <div class="title">{{.Name}}</div>
-            <div class="price">₴{{printf "%.2f" .Price}}</div>
-
-            <form method="POST" action="/cart/add">
-                <input type="hidden" name="id" value="{{.ID}}">
-                <input type="hidden" name="redirect_to" value="/">
-                <button class="add">+</button>
-            </form>
+    <section class="section">
+        <div class="section-head">
+            <h2>Колекції</h2>
+            <div class="section-hint">Збройові аксесуари / тематичні набори</div>
         </div>
-        {{end}}
-    </div>
+
+        <div class="grid">
+            {{range .Collections}}
+            <article class="card reveal">
+                <a class="card-img" href="/product?id={{.ID}}">
+                    <img src="{{.Photo}}" alt="{{.Name}}">
+                </a>
+
+                <div class="card-body">
+                    <div class="card-brand">{{.Brand}}</div>
+                    <a class="card-title" href="/product?id={{.ID}}">{{.Name}}</a>
+
+                    <div class="card-price">
+                        <span class="price-main">від ₴{{printf "%.2f" .Price}}</span>
+                    </div>
+
+                    <div class="card-meta">
+                        {{if inStock .}}
+                        <span class="stock ok">● В наявності</span>
+                        {{else}}
+                        <span class="stock no">● Немає</span>
+                        {{end}}
+
+                        {{if .Color}}
+                        <span class="colors">
+                <span class="dot" title="Колір: {{.Color}}"></span>
+                <span class="muted">{{.Color}}</span>
+              </span>
+                        {{end}}
+                    </div>
+
+                    <!-- BUY BUTTON (знизу, не +) -->
+                    <form class="buy" method="POST" action="/cart/add">
+                        <input type="hidden" name="id" value="{{.ID}}">
+                        <input type="hidden" name="redirect_to" value="/">
+                        <button class="btn-buy" type="submit">Купити</button>
+                    </form>
+                </div>
+            </article>
+            {{end}}
+        </div>
+    </section>
     {{end}}
 
+    <!-- NEW -->
     {{if .NewItems}}
-    <h2>New</h2>
-    <div class="grid">
-        {{range .NewItems}}
-        <div class="card">
-            <img src="{{.Photo}}">
-            <div class="brand">{{.Brand}}</div>
-            <div class="title">{{.Name}}</div>
-            <div class="price">₴{{printf "%.2f" .Price}}</div>
-
-            <form method="POST" action="/cart/add">
-                <input type="hidden" name="id" value="{{.ID}}">
-                <input type="hidden" name="redirect_to" value="/">
-                <button class="add">+</button>
-            </form>
+    <section class="section">
+        <div class="section-head">
+            <h2>Новинки</h2>
+            <div class="section-hint">Оновлення останніх 3 місяців</div>
         </div>
-        {{end}}
-    </div>
+
+        <div class="grid">
+            {{range .NewItems}}
+            <article class="card reveal">
+                <a class="card-img" href="/product?id={{.ID}}">
+                    <img src="{{.Photo}}" alt="{{.Name}}">
+                    <span class="badge-new">NEW</span>
+                </a>
+
+                <div class="card-body">
+                    <div class="card-brand">{{.Brand}}</div>
+                    <a class="card-title" href="/product?id={{.ID}}">{{.Name}}</a>
+
+                    <div class="card-price">
+                        <span class="price-main">від ₴{{printf "%.2f" .Price}}</span>
+                    </div>
+
+                    <div class="card-meta">
+                        {{if inStock .}}
+                        <span class="stock ok">● В наявності</span>
+                        {{else}}
+                        <span class="stock no">● Немає</span>
+                        {{end}}
+
+                        {{if .Color}}
+                        <span class="colors">
+                <span class="dot" title="Колір: {{.Color}}"></span>
+                <span class="muted">{{.Color}}</span>
+              </span>
+                        {{end}}
+                    </div>
+
+                    <form class="buy" method="POST" action="/cart/add">
+                        <input type="hidden" name="id" value="{{.ID}}">
+                        <input type="hidden" name="redirect_to" value="/">
+                        <button class="btn-buy" type="submit">Купити</button>
+                    </form>
+                </div>
+            </article>
+            {{end}}
+        </div>
+    </section>
     {{end}}
 
-    <h2>All</h2>
-    <div class="grid">
-        {{range .All}}
-        <div class="card">
-            <img src="{{.Photo}}">
-            <div class="brand">{{.Brand}}</div>
-            <div class="title">{{.Name}}</div>
-            <div class="price">₴{{printf "%.2f" .Price}}</div>
-
-            <form method="POST" action="/cart/add">
-                <input type="hidden" name="id" value="{{.ID}}">
-                <input type="hidden" name="redirect_to" value="/">
-                <button class="add">+</button>
-            </form>
+    <!-- ALL -->
+    <section class="section">
+        <div class="section-head">
+            <h2>Товари</h2>
+            <div class="section-hint">Усі доступні позиції</div>
         </div>
-        {{end}}
-    </div>
 
-    <a href="/cart">Корзина ({{.CartCount}})</a>
-    <a href="/admin">Админка</a>
-    <a href="/logout">Logout</a>
+        {{if not .All}}
+        <div class="empty">Нічого не знайдено. Спробуй інший запит.</div>
+        {{end}}
+
+        <div class="grid">
+            {{range .All}}
+            <article class="card reveal">
+                <a class="card-img" href="/product?id={{.ID}}">
+                    <img src="{{.Photo}}" alt="{{.Name}}">
+                </a>
+
+                <div class="card-body">
+                    <div class="card-brand">{{.Brand}}</div>
+                    <a class="card-title" href="/product?id={{.ID}}">{{.Name}}</a>
+
+                    <div class="card-price">
+                        <span class="price-main">від ₴{{printf "%.2f" .Price}}</span>
+                    </div>
+
+                    <div class="card-meta">
+                        {{if inStock .}}
+                        <span class="stock ok">● В наявності</span>
+                        {{else}}
+                        <span class="stock no">● Немає</span>
+                        {{end}}
+
+                        {{if .Color}}
+                        <span class="colors">
+                <span class="dot" title="Колір: {{.Color}}"></span>
+                <span class="muted">{{.Color}}</span>
+              </span>
+                        {{end}}
+                    </div>
+
+                    <form class="buy" method="POST" action="/cart/add">
+                        <input type="hidden" name="id" value="{{.ID}}">
+                        <input type="hidden" name="redirect_to" value="/">
+                        <button class="btn-buy" type="submit">Купити</button>
+                    </form>
+                </div>
+            </article>
+            {{end}}
+        </div>
+    </section>
 
 </main>
 
-<!-- ⚠️ ВАЖНО: ТОЛЬКО MODULE -->
-<script type="module">
-    import { auth, googleProvider } from "/static/firebase-config.js";
-    import {
-        signInWithPopup,
-        onAuthStateChanged,
-        signOut
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+<script>
+    // ефект появи товарів при скролі
+    const els = document.querySelectorAll('.reveal');
+    const io = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+            if (e.isIntersecting) e.target.classList.add('show');
+        });
+    }, { threshold: 0.15 });
 
-    const btnLogin = document.getElementById("btnLogin");
-    const btnLogout = document.getElementById("btnLogout");
-    const userEmail = document.getElementById("userEmail");
-
-    btnLogin.onclick = async () => {
-        try {
-            await signInWithPopup(auth, googleProvider);
-        } catch (e) {
-            alert(e.message);
-        }
-    };
-
-    btnLogout.onclick = async () => {
-        await signOut(auth);
-    };
-
-    onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            userEmail.textContent = user.email;
-            btnLogin.style.display = "none";
-            btnLogout.style.display = "inline-block";
-
-            // если хочешь — можно отправлять токен в формы
-            const token = await user.getIdToken();
-            console.log("ID TOKEN:", token);
-        } else {
-            userEmail.textContent = "";
-            btnLogin.style.display = "inline-block";
-            btnLogout.style.display = "none";
-        }
-    });
+    els.forEach(el => io.observe(el));
 </script>
 
 </body>
