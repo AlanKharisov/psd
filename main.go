@@ -179,6 +179,44 @@ func main() {
 	}
 	defer fsClient.Close()
 
+	// Микс для магазина
+	shopMux := newShopMux()
+
+	// Микс для адмінки
+	adminMux := newAdminMux()
+
+	// ROOT mux, який розрулює по домену (Host)
+	rootMux := http.NewServeMux()
+	rootMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+
+		// admin.world-of-photo.com (з портом або без)
+		if strings.HasPrefix(host, "admin.world-of-photo.com") ||
+			strings.HasPrefix(host, "admin.world-of-photo.com:") {
+			adminMux.ServeHTTP(w, r)
+			return
+		}
+
+		// Все інше (включно з p.world-of-photo.com, localhost:8010 і т.д.) → магазин
+		shopMux.ServeHTTP(w, r)
+	})
+
+	srv := &http.Server{
+		Addr:              ":8010",
+		Handler:           rootMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	log.Println("Listening on :8010 (shop + admin by Host header)")
+	log.Fatal(srv.ListenAndServe())
+}
+
+// ====== MUX для магазина ======
+
+func newShopMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// static
@@ -201,17 +239,34 @@ func main() {
 	// rating
 	mux.HandleFunc("/rate", rateHandler)
 
-	srv := &http.Server{
-		Addr:              ":8010",
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
+	return mux
+}
 
-	log.Println("http://localhost:8010")
-	log.Fatal(srv.ListenAndServe())
+// ====== MUX для адмінки ======
+
+func newAdminMux() *http.ServeMux {
+	mux := http.NewServeMux()
+
+	// статика для адмінки (та ж сама папка)
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
+	// головна сторінка адмінки
+	mux.HandleFunc("/admin", adminHandler)
+
+	// root цього сабдомену -> /admin
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin", http.StatusFound)
+	})
+
+	return mux
+}
+
+func adminHandler(w http.ResponseWriter, r *http.Request) {
+	if err := tpl.ExecuteTemplate(w, "admin.html", nil); err != nil {
+		log.Println("admin template error:", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
 }
 
 // ====== Firebase Admin / Firestore ======
