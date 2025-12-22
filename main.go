@@ -14,19 +14,17 @@ import (
 	"sync"
 	"time"
 
+	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go/v4"
 	fbauth "firebase.google.com/go/v4/auth"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
-/*
-========================
-        MODELS
-========================
-*/
+// ====== МОДЕЛІ ДЛЯ ШОПУ ======
 
 type Product struct {
-	ID    int
+	ID    string
 	Photo string
 	Name  string
 
@@ -52,13 +50,13 @@ type Product struct {
 
 	// time flags
 	CreatedAt time.Time
-	NewUntil  time.Time // auto: CreatedAt + 3 months
+	NewUntil  time.Time // CreatedAt + 3 місяці
 
 	// limited stock / hide logic
 	Limited      bool
 	Qty          int
-	SoldOutUntil time.Time // show "sold out" till this date
-	HideAt       time.Time // hide product after this date
+	SoldOutUntil time.Time // показувати "продано" до цієї дати
+	HideAt       time.Time // сховати після цієї дати
 }
 
 type CartItem struct {
@@ -92,11 +90,32 @@ type CartPageData struct {
 	IsLoggedIn bool
 }
 
-/*
-========================
-     SAFE RESPONSE
-========================
-*/
+// Firestore shape (як зберігає адмінка)
+type productDoc struct {
+	Name         string    `firestore:"name"`
+	SKU          string    `firestore:"sku"`
+	Brand        string    `firestore:"brand"`
+	Category     string    `firestore:"category"`
+	Photo        string    `firestore:"photo"`
+	Color        string    `firestore:"color"`
+	Size         string    `firestore:"size"`
+	Weight       string    `firestore:"weight"`
+	Qty          int       `firestore:"qty"`
+	Price        float64   `firestore:"price"`
+	DoublePrice  float64   `firestore:"doublePrice"`
+	OldPrice     float64   `firestore:"oldPrice"`
+	SalePrice    float64   `firestore:"salePrice"`
+	Limited      bool      `firestore:"limited"`
+	SoldOutUntil string    `firestore:"soldOutUntil"` // "YYYY-MM-DD" або ""
+	HideAt       string    `firestore:"hideAt"`       // "YYYY-MM-DD" або ""
+	Description  string    `firestore:"description"`
+	CreatedAt    time.Time `firestore:"createdAt"`
+
+	StarsSum   int `firestore:"starsSum"`
+	StarsCount int `firestore:"starsCount"`
+}
+
+// ====== Трекер для коректного статус-коду ======
 
 type trackWriter struct {
 	http.ResponseWriter
@@ -118,41 +137,29 @@ func (tw *trackWriter) Write(b []byte) (int, error) {
 	return tw.ResponseWriter.Write(b)
 }
 
-/*
-========================
-        STATE
-========================
-*/
+// ====== Глобальні змінні ======
 
 var (
 	tpl *template.Template
 
-	products      []Product
-	productsMutex sync.RWMutex
-	nextProductID = 1
-
-	// demo global cart: productID -> qty
-	cart      = map[int]int{}
+	// корзина: productID (doc.id) -> qty
+	cart      = map[string]int{}
 	cartMutex sync.RWMutex
 
-	// rating: 1 time per uid per product
+	// рейтинги: uid:productID -> вже голосував
 	rated      = map[string]bool{}
 	ratedMutex sync.Mutex
 
-	fbAuth *fbauth.Client
+	fbAuth   *fbauth.Client
+	fsClient *firestore.Client
 )
 
-/*
-========================
-        MAIN
-========================
-*/
+// ====== MAIN ======
 
 func main() {
 	funcs := template.FuncMap{
 		"money": func(v float64) string { return fmt.Sprintf("%.2f", v) },
 
-		// є в наявності?
 		"inStock": func(p Product) bool {
 			if !p.Limited {
 				return true
@@ -170,8 +177,7 @@ func main() {
 	if err := initFirebaseAdmin(); err != nil {
 		log.Fatal("firebase init:", err)
 	}
-
-	seedProducts()
+	defer fsClient.Close()
 
 	mux := http.NewServeMux()
 
@@ -195,10 +201,6 @@ func main() {
 	// rating
 	mux.HandleFunc("/rate", rateHandler)
 
-	// admin protected by COOKIE session
-	mux.Handle("/admin", requireSession(http.HandlerFunc(adminHandler)))
-	mux.Handle("/admin/product", requireSession(http.HandlerFunc(createProductHandler)))
-
 	srv := &http.Server{
 		Addr:              ":8010",
 		Handler:           mux,
@@ -212,11 +214,7 @@ func main() {
 	log.Fatal(srv.ListenAndServe())
 }
 
-/*
-========================
-     FIREBASE ADMIN
-========================
-*/
+// ====== Firebase Admin / Firestore ======
 
 func initFirebaseAdmin() error {
 	credPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -227,21 +225,30 @@ func initFirebaseAdmin() error {
 		return fmt.Errorf("service account json not found: %s", credPath)
 	}
 
-	app, err := firebase.NewApp(context.Background(), nil, option.WithCredentialsFile(credPath))
+	ctx := context.Background()
+
+	app, err := firebase.NewApp(ctx, nil, option.WithCredentialsFile(credPath))
 	if err != nil {
 		return err
 	}
 
-	client, err := app.Auth(context.Background())
+	client, err := app.Auth(ctx)
 	if err != nil {
 		return err
 	}
-
 	fbAuth = client
+
+	fs, err := app.Firestore(ctx)
+	if err != nil {
+		return err
+	}
+	fsClient = fs
+
 	return nil
 }
 
-// Create session cookie from Firebase ID token
+// ====== Допоміжні ======
+
 func sessionLoginHandler(w http.ResponseWriter, r *http.Request) {
 	tw := &trackWriter{ResponseWriter: w}
 
@@ -270,7 +277,7 @@ func sessionLoginHandler(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		// Secure: true, // enable on HTTPS
+		// Secure: true,
 		MaxAge: int(expiresIn.Seconds()),
 	})
 
@@ -288,44 +295,16 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func requireSession(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !isLoggedIn(r) {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 func isLoggedIn(r *http.Request) bool {
+	if fbAuth == nil {
+		return false
+	}
 	c, err := r.Cookie("session")
-	if err != nil || c.Value == "" || fbAuth == nil {
+	if err != nil || c.Value == "" {
 		return false
 	}
 	_, err = fbAuth.VerifySessionCookie(r.Context(), c.Value)
 	return err == nil
-}
-
-/*
-========================
-        HELPERS
-========================
-*/
-
-func normalizePhoto(url string) string {
-	url = strings.TrimSpace(url)
-	if url == "" {
-		return "https://via.placeholder.com/600x400?text=No+Image"
-	}
-	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
-		return url
-	}
-	// if user entered "600x400?text=Patch"
-	if strings.HasPrefix(url, "600x") || strings.HasPrefix(url, "300x") {
-		return "https://via.placeholder.com/" + url
-	}
-	return url
 }
 
 func parseDateYYYYMMDD(s string) time.Time {
@@ -341,7 +320,7 @@ func parseDateYYYYMMDD(s string) time.Time {
 }
 
 func isNew(p Product) bool {
-	return time.Now().Before(p.NewUntil)
+	return !p.NewUntil.IsZero() && time.Now().Before(p.NewUntil)
 }
 
 func isHidden(p Product) bool {
@@ -371,44 +350,83 @@ func avgStars(p Product) float64 {
 	return float64(p.StarsSum) / float64(p.StarsCount)
 }
 
-func addProduct(p Product) {
-	productsMutex.Lock()
-	defer productsMutex.Unlock()
+// ====== Робота з Firestore (товари) ======
 
-	p.ID = nextProductID
-	nextProductID++
+func productFromDoc(doc *firestore.DocumentSnapshot) (Product, error) {
+	var pd productDoc
+	if err := doc.DataTo(&pd); err != nil {
+		return Product{}, err
+	}
 
-	products = append(products, p)
+	created := pd.CreatedAt
+	var newUntil time.Time
+	if !created.IsZero() {
+		newUntil = created.AddDate(0, 3, 0)
+	}
+
+	return Product{
+		ID:    doc.Ref.ID,
+		Photo: pd.Photo,
+		Name:  pd.Name,
+
+		StarsSum:   pd.StarsSum,
+		StarsCount: pd.StarsCount,
+
+		Price:       pd.Price,
+		DoublePrice: pd.DoublePrice,
+		OldPrice:    pd.OldPrice,
+		SalePrice:   pd.SalePrice,
+
+		Category: pd.Category,
+		Brand:    pd.Brand,
+		Color:    pd.Color,
+		Size:     pd.Size,
+		Weight:   pd.Weight,
+		SKU:      pd.SKU,
+
+		Description: pd.Description,
+
+		CreatedAt:    created,
+		NewUntil:     newUntil,
+		Limited:      pd.Limited,
+		Qty:          pd.Qty,
+		SoldOutUntil: parseDateYYYYMMDD(pd.SoldOutUntil),
+		HideAt:       parseDateYYYYMMDD(pd.HideAt),
+	}, nil
 }
 
-func snapshotProducts() []Product {
-	productsMutex.RLock()
-	defer productsMutex.RUnlock()
-	cp := make([]Product, len(products))
-	copy(cp, products)
-	return cp
-}
+func fetchAllProducts(ctx context.Context) ([]Product, error) {
+	iter := fsClient.Collection("products").OrderBy("createdAt", firestore.Desc).Documents(ctx)
+	defer iter.Stop()
 
-func findProductByID(id int) (Product, bool) {
-	productsMutex.RLock()
-	defer productsMutex.RUnlock()
-	for _, p := range products {
-		if p.ID == id {
-			return p, true
+	var res []Product
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
 		}
+		if err != nil {
+			return nil, err
+		}
+		p, err := productFromDoc(doc)
+		if err != nil {
+			log.Println("productFromDoc error:", err)
+			continue
+		}
+		res = append(res, p)
 	}
-	return Product{}, false
+	return res, nil
 }
 
-func snapshotCart() map[int]int {
-	cartMutex.RLock()
-	defer cartMutex.RUnlock()
-	cp := make(map[int]int, len(cart))
-	for k, v := range cart {
-		cp[k] = v
+func fetchProductByID(ctx context.Context, id string) (Product, error) {
+	doc, err := fsClient.Collection("products").Doc(id).Get(ctx)
+	if err != nil {
+		return Product{}, err
 	}
-	return cp
+	return productFromDoc(doc)
 }
+
+// ====== Корзина ======
 
 func getCartCount() int {
 	cartMutex.RLock()
@@ -421,11 +439,16 @@ func getCartCount() int {
 }
 
 func getCartTotal() float64 {
-	c := snapshotCart()
+	cartMutex.RLock()
+	defer cartMutex.RUnlock()
+
 	var total float64
-	for id, q := range c {
-		p, ok := findProductByID(id)
-		if !ok || q <= 0 {
+	for id, q := range cart {
+		if q <= 0 {
+			continue
+		}
+		p, err := fetchProductByID(context.Background(), id)
+		if err != nil || isHidden(p) {
 			continue
 		}
 		total += p.Price * float64(q)
@@ -433,68 +456,9 @@ func getCartTotal() float64 {
 	return total
 }
 
-/*
-========================
-          SEED
-========================
-*/
-
-func seedProducts() {
-	now := time.Now()
-
-	addProduct(Product{
-		Photo:       "https://via.placeholder.com/600x400?text=Collection+Set",
-		Name:        "Work & Travel Collection Pack",
-		StarsSum:    24,
-		StarsCount:  6,
-		Price:       21000,
-		DoublePrice: 18000,
-		OldPrice:    23000,
-		SalePrice:   21000,
-		Category:    "Collections",
-		Brand:       "PSDInfo",
-		Color:       "Black",
-		Size:        "One size",
-		Weight:      "—",
-		SKU:         "COLL-001",
-		Description: "Колекційний набір (демо).",
-		CreatedAt:   now,
-		NewUntil:    now.AddDate(0, 3, 0),
-		Limited:     true,
-		Qty:         5,
-	})
-
-	addProduct(Product{
-		Photo:       "https://via.placeholder.com/600x400?text=Patch",
-		Name:        "Patch Work&Travel Dnipro",
-		StarsSum:    10,
-		StarsCount:  3,
-		Price:       400,
-		DoublePrice: 300,
-		OldPrice:    0,
-		SalePrice:   0,
-		Category:    "Patches",
-		Brand:       "PSDInfo",
-		Color:       "White",
-		Size:        "M",
-		Weight:      "50g",
-		SKU:         "PCH-001",
-		Description: "Патч (демо).",
-		CreatedAt:   now,
-		NewUntil:    now.AddDate(0, 3, 0),
-		Limited:     true,
-		Qty:         10,
-	})
-}
-
-/*
-========================
-        HANDLERS
-========================
-*/
+// ====== Хендлери сторінок ======
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
-	// Якщо вже залогінений — на головну
 	if isLoggedIn(r) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
@@ -505,12 +469,17 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	tw := &trackWriter{ResponseWriter: w}
 
+	all, err := fetchAllProducts(r.Context())
+	if err != nil {
+		log.Println("fetchAllProducts:", err)
+		http.Error(tw, "DB error", http.StatusInternalServerError)
+		return
+	}
+
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	lq := strings.ToLower(q)
 
-	all := snapshotProducts()
-	matches := make([]Product, 0, len(all))
-
+	var matches []Product
 	for _, p := range all {
 		if isHidden(p) {
 			continue
@@ -530,7 +499,10 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sort.Slice(matches, func(i, j int) bool { return matches[i].ID > matches[j].ID })
+	// сортуємо за CreatedAt (новіші зверху)
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].CreatedAt.After(matches[j].CreatedAt)
+	})
 
 	var collections, newItems, rest []Product
 	for _, p := range matches {
@@ -567,14 +539,14 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 func productHandler(w http.ResponseWriter, r *http.Request) {
 	tw := &trackWriter{ResponseWriter: w}
 
-	id, err := strconv.Atoi(r.URL.Query().Get("id"))
-	if err != nil || id <= 0 {
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" {
 		http.NotFound(tw, r)
 		return
 	}
 
-	p, ok := findProductByID(id)
-	if !ok || isHidden(p) {
+	p, err := fetchProductByID(r.Context(), id)
+	if err != nil || isHidden(p) {
 		http.NotFound(tw, r)
 		return
 	}
@@ -603,14 +575,22 @@ func productHandler(w http.ResponseWriter, r *http.Request) {
 func cartHandler(w http.ResponseWriter, r *http.Request) {
 	tw := &trackWriter{ResponseWriter: w}
 
-	c := snapshotCart()
+	cartMutex.RLock()
+	snap := make(map[string]int, len(cart))
+	for k, v := range cart {
+		snap[k] = v
+	}
+	cartMutex.RUnlock()
 
 	var items []CartItem
 	var total float64
 
-	for id, q := range c {
-		p, ok := findProductByID(id)
-		if !ok || q <= 0 {
+	for id, q := range snap {
+		if q <= 0 {
+			continue
+		}
+		p, err := fetchProductByID(r.Context(), id)
+		if err != nil || isHidden(p) {
 			continue
 		}
 		sub := p.Price * float64(q)
@@ -641,40 +621,28 @@ func cartAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = r.ParseForm()
 
-	id, _ := strconv.Atoi(r.FormValue("id"))
-	if id <= 0 {
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	p, ok := findProductByID(id)
-	if !ok || isHidden(p) {
+	p, err := fetchProductByID(r.Context(), id)
+	if err != nil || isHidden(p) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	// якщо limited і qty 0 — не дозволяємо
 	if p.Limited && p.Qty <= 0 {
 		back := r.FormValue("redirect_to")
 		if back == "" {
-			back = "/product?id=" + strconv.Itoa(id)
+			back = "/product?id=" + id
 		}
 		http.Redirect(w, r, back, http.StatusSeeOther)
 		return
 	}
 
-	// резерв: зменшуємо qty
-	if p.Limited && p.Qty > 0 {
-		productsMutex.Lock()
-		for i := range products {
-			if products[i].ID == id && products[i].Qty > 0 {
-				products[i].Qty--
-				break
-			}
-		}
-		productsMutex.Unlock()
-	}
-
+	// ТУТ ми не змінюємо Qty у Firestore, тільки візуально додаємо в корзину
 	cartMutex.Lock()
 	cart[id]++
 	cartMutex.Unlock()
@@ -693,8 +661,8 @@ func cartRemoveHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = r.ParseForm()
 
-	id, _ := strconv.Atoi(r.FormValue("id"))
-	if id <= 0 {
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
 		http.Redirect(w, r, "/cart", http.StatusSeeOther)
 		return
 	}
@@ -712,7 +680,6 @@ func rateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// потрібен логін (session cookie)
 	c, err := r.Cookie("session")
 	if err != nil || c.Value == "" {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -726,94 +693,33 @@ func rateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = r.ParseForm()
-	id, _ := strconv.Atoi(r.FormValue("id"))
+	id := strings.TrimSpace(r.FormValue("id"))
 	star, _ := strconv.Atoi(r.FormValue("star"))
 
-	if id <= 0 || star < 1 || star > 5 {
-		http.Redirect(w, r, "/product?id="+strconv.Itoa(id), http.StatusSeeOther)
+	if id == "" || star < 1 || star > 5 {
+		http.Redirect(w, r, "/product?id="+id, http.StatusSeeOther)
 		return
 	}
 
-	key := tok.UID + ":" + strconv.Itoa(id)
+	key := tok.UID + ":" + id
 
 	ratedMutex.Lock()
 	if rated[key] {
 		ratedMutex.Unlock()
-		http.Redirect(w, r, "/product?id="+strconv.Itoa(id), http.StatusSeeOther)
+		http.Redirect(w, r, "/product?id="+id, http.StatusSeeOther)
 		return
 	}
 	rated[key] = true
 	ratedMutex.Unlock()
 
-	productsMutex.Lock()
-	for i := range products {
-		if products[i].ID == id {
-			products[i].StarsSum += star
-			products[i].StarsCount++
-			break
-		}
-	}
-	productsMutex.Unlock()
-
-	http.Redirect(w, r, "/product?id="+strconv.Itoa(id), http.StatusSeeOther)
-}
-
-func adminHandler(w http.ResponseWriter, r *http.Request) {
-	tw := &trackWriter{ResponseWriter: w}
-
-	all := snapshotProducts()
-	if err := tpl.ExecuteTemplate(tw, "admin.html", all); err != nil {
-		log.Println("render admin:", err)
-		if !tw.wroteHeader {
-			http.Error(tw, "template error", http.StatusInternalServerError)
-		}
-		return
-	}
-}
-
-func createProductHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
-		return
-	}
-	_ = r.ParseForm()
-
-	now := time.Now()
-
-	price, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("price")), 64)
-	doublePrice, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("double_price")), 64)
-	oldPrice, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("old_price")), 64)
-	salePrice, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("sale_price")), 64)
-
-	qty, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("qty")))
-
-	p := Product{
-		Photo:       normalizePhoto(r.FormValue("photo")),
-		Name:        strings.TrimSpace(r.FormValue("name")),
-		SKU:         strings.TrimSpace(r.FormValue("sku")),
-		Brand:       strings.TrimSpace(r.FormValue("brand")),
-		Category:    strings.TrimSpace(r.FormValue("category")),
-		Color:       strings.TrimSpace(r.FormValue("color")),
-		Size:        strings.TrimSpace(r.FormValue("size")),
-		Weight:      strings.TrimSpace(r.FormValue("weight")),
-		Description: strings.TrimSpace(r.FormValue("description")),
-
-		Price:       price,
-		DoublePrice: doublePrice,
-		OldPrice:    oldPrice,
-		SalePrice:   salePrice,
-
-		Limited:      r.FormValue("limited") == "on",
-		Qty:          qty,
-		SoldOutUntil: parseDateYYYYMMDD(r.FormValue("sold_out_until")),
-		HideAt:       parseDateYYYYMMDD(r.FormValue("hide_at")),
-
-		CreatedAt: now,
-		NewUntil:  now.AddDate(0, 3, 0),
+	// оновлюємо в Firestore
+	_, err = fsClient.Collection("products").Doc(id).Update(r.Context(), []firestore.Update{
+		{Path: "starsSum", Value: firestore.Increment(int64(star))},
+		{Path: "starsCount", Value: firestore.Increment(int64(1))},
+	})
+	if err != nil {
+		log.Println("rate update error:", err)
 	}
 
-	addProduct(p)
-
-	// після створення — на головну, щоб одразу побачити
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, "/product?id="+id, http.StatusSeeOther)
 }
