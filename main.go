@@ -201,17 +201,23 @@ func main() {
 		shopMux.ServeHTTP(w, r)
 	})
 
-	srv := &http.Server{
-		Addr:              ":8010",
-		Handler:           rootMux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
+	port := os.Getenv("PORT")
+if port == "" {
+    // локально у тебя останется 8010, на Render будет, например, 10000
+    port = "8010"
+}
 
-	log.Println("Listening on :8010 (shop + admin by Host header)")
-	log.Fatal(srv.ListenAndServe())
+srv := &http.Server{
+    Addr:              ":" + port,
+    Handler:           mux, // или rootMux, если ты уже сделал разделение shop/admin
+    ReadHeaderTimeout: 5 * time.Second,
+    ReadTimeout:       10 * time.Second,
+    WriteTimeout:      15 * time.Second,
+    IdleTimeout:       60 * time.Second,
+}
+
+log.Println("Listening on port", port)
+log.Fatal(srv.ListenAndServe())
 }
 
 // ====== MUX для магазина ======
