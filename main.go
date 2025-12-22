@@ -179,45 +179,46 @@ func main() {
 	}
 	defer fsClient.Close()
 
-	// Микс для магазина
-	shopMux := newShopMux()
+	// ===== создаём mux и вешаем все роуты =====
+	mux := http.NewServeMux()
 
-	// Микс для адмінки
-	adminMux := newAdminMux()
+	// static
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
-	// ROOT mux, який розрулює по домену (Host)
-	rootMux := http.NewServeMux()
-	rootMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		host := r.Host
+	// pages
+	mux.HandleFunc("/", indexHandler)
+	mux.HandleFunc("/product", productHandler)
 
-		// admin.world-of-photo.com (з портом або без)
-		if strings.HasPrefix(host, "admin.world-of-photo.com") ||
-			strings.HasPrefix(host, "admin.world-of-photo.com:") {
-			adminMux.ServeHTTP(w, r)
-			return
-		}
+	// auth
+	mux.HandleFunc("/login", loginHandler)
+	mux.HandleFunc("/logout", logoutHandler)
+	mux.HandleFunc("/sessionLogin", sessionLoginHandler)
 
-		// Все інше (включно з p.world-of-photo.com, localhost:8010 і т.д.) → магазин
-		shopMux.ServeHTTP(w, r)
-	})
+	// cart
+	mux.HandleFunc("/cart", cartHandler)
+	mux.HandleFunc("/cart/add", cartAddHandler)
+	mux.HandleFunc("/cart/remove", cartRemoveHandler)
 
+	// rating
+	mux.HandleFunc("/rate", rateHandler)
+
+	// ===== порт для локала и Render =====
 	port := os.Getenv("PORT")
-if port == "" {
-    // локально у тебя останется 8010, на Render будет, например, 10000
-    port = "8010"
-}
+	if port == "" {
+		port = "8010" // локально
+	}
 
-srv := &http.Server{
-    Addr:              ":" + port,
-    Handler:           mux, // или rootMux, если ты уже сделал разделение shop/admin
-    ReadHeaderTimeout: 5 * time.Second,
-    ReadTimeout:       10 * time.Second,
-    WriteTimeout:      15 * time.Second,
-    IdleTimeout:       60 * time.Second,
-}
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
-log.Println("Listening on port", port)
-log.Fatal(srv.ListenAndServe())
+	log.Println("Listening on port", port)
+	log.Fatal(srv.ListenAndServe())
 }
 
 // ====== MUX для магазина ======
